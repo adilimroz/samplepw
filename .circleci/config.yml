@@ -1,47 +1,81 @@
 version: 2.1
 
 orbs:
-  node: circleci/node@4.1.0
-  browser-tools: circleci/browser-tools@1.1.3
-
-executors:
-  test-executor:
-    docker:
-      - image: cimg/node:14.17-browsers
-    resource_class: large
-
-commands:
-  install_dependencies:
-    description: "Install dependencies"
-    steps:
-      - checkout
-      - node/install-packages:
-          pkg-manager: yarn
-
-  run_tests:
-    description: "Run Playwright tests in parallel"
-    parameters:
-      parallelism:
-        type: integer
-        default: 4
-    steps:
-      - run:
-          name: Run Playwright Tests
-          command: npx playwright test --project=chromium --workers << parameters.parallelism >> 
+  node: circleci/node@5.0.2
+  aws-cli: circleci/aws-cli@3.1.1
+  sentry: trustedshops-public/sentry@1.3.0
+  jira: circleci/jira@1.3.1
 
 jobs:
-  test_all_tags:
-    executor: test-executor
-    parallelism: 4  # Adjust this to change the number of parallel instances
+  playwright-tests:
+    playwright-cd-tests:
+    machine: true
+    resource_class: << parameters.resource >>
+    parallelism: << parameters.parallels >>
+    working_directory: ~/project
+    parameters:
+      browser::
+        type: string
+        default: 'chromium'
+      baseURL:
+        type: string
+      resource:
+        type: string
+      smokeOrRegression:
+        type: enum
+        enum: ['testTag1', 'testTag2']
+      additionalEnvs:
+        type: string
+        default: 'workers=1'
+      parallels:
+        type: integer
+        default: 1
     steps:
-      - install_dependencies
-      - run_tests:
-          parallelism: << parameters.parallelism >>
-
-workflows:
-  version: 2
-  build_and_test:
-    jobs:
-      - test_all_tags:
-          parallelism: 4  # This number should match the executor's parallelism for consistent sharding
-
+      - run:
+          no_output_timeout: 30m
+          name: Install checkout tools and test tools
+          command: |
+            rm -rf samplepw
+            sudo rm -f /etc/apt/sources.list.d/nodesource.list
+            # Failing on file size when downloading source for node 16
+            sudo apt update
+            sudo apt install -y ca-certificates gnupg2
+            sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 1655A0AB68576280
+            sudo apt install --no-install-recommends -y git openssh-client
+            curl -sL https://deb.nodesource.com/setup_18.x | sudo bash -
+            sudo chmod a+r "/usr/share/keyrings/nodesource.gpg"
+            sudo apt-get install -y nodejs
+            sudo npm install -g yarn
+            sudo rm -rf /var/lib/apt/lists/*
+            curl -fLSs https://raw.githubusercontent.com/CircleCI-Public/circleci-cli/master/install.sh | sudo bash
+            git clone --depth=1 https://github.com/adilimroz/samplepw.git --single-branch --branch=master
+            ls
+            sudo chmod -R 0777 samplepw
+            cd samplepw/playwright
+            ls
+      - run:
+          name: Clean old test results
+          command: |
+            if [ -d "./samplepw/playwright/test-results" ]; then rm -rfv ./samplepw/playwright/test-results; fi
+      - run:
+          name: Install dependencies
+          command: |
+            cd samplepw/playwright
+            yarn
+            npx playwright install --with-deps
+      - run:
+          name: Run tests in << parameters.browser >>
+          command: |
+            cd samplepw/playwright
+            SHARD="2"; << parameters.additionalEnvs >> baseURL=<< parameters.baseURL >> npx playwright test ./tests/*/*.spec.ts --project << parameters.browser >> -g "@<< parameters.smokeOrRegression >>" --shard=${SHARD}/${CIRCLE_NODE_TOTAL} || true
+      - store_test_results:
+          path: ./samplepw/playwright/test-results
+      - store_artifacts:
+          path: ./samplepw/playwright/test-results
+          event: fail
+      - persist_to_workspace:
+          root: ~/project
+          when: always
+          paths:
+            - ./samplepw/playwright/test-results/*.xml
+            - ./samplepw/playwright/test-results/**/*.webm
