@@ -85,5 +85,4 @@ workflows:
             parameters:
               baseURL: ['https://staging.testgorilla.com']
               additionalEnvs: ['email=dummy.tests+tas-organizer@testgorilla.com junitFileName=tas']
-              resource: ['testgorilla-bv/tgo-runner-staging-small']
               smokeOrRegression: ['testTag1']
