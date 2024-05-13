@@ -79,8 +79,8 @@ jobs:
 workflows:
   sample-workflow:
     jobs:
-      - playwright-cd-tests:
-          name: playwright-cd-tests-staging
+      - playwright-tests:
+          name: playwright-tests-test
           matrix:
             parameters:
               baseURL: ['https://staging.testgorilla.com']
