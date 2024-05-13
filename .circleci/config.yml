@@ -6,13 +6,12 @@ orbs:
 
 jobs:
   playwright-tests:
-    playwright-cd-tests:
     machine: true
     resource_class: << parameters.resource >>
     parallelism: << parameters.parallels >>
     working_directory: ~/project
     parameters:
-      browser::
+      browser:
         type: string
         default: 'chromium'
       baseURL:
@@ -77,3 +76,4 @@ jobs:
           paths:
             - ./samplepw/playwright/test-results/*.xml
             - ./samplepw/playwright/test-results/**/*.webm
+    
